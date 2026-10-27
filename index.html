@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="sv"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ölkalendern 🎄</title>
+<style>
+:root{--g:#0b3d2e;--g2:#145a43;--r:#b3202a;--gold:#d4af37;--s:#e8e8ee;--t:#fff8e7}
+*{box-sizing:border-box}body{margin:0;font-family:Georgia,serif;background:radial-gradient(circle at top,var(--g2),var(--g));color:var(--t);min-height:100vh}
+#snow{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+#snow span{position:absolute;top:-20px;color:#fff;opacity:.7;animation:fall linear infinite}
+@keyframes fall{to{transform:translateY(110vh) rotate(360deg)}}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--r);border-bottom:3px solid var(--gold)}
+header h1{font-size:1.2rem;margin:0}#bg{background:none;border:0;color:var(--gold);font-size:1.8rem}
+#nav{position:fixed;top:56px;left:0;z-index:6;background:var(--g);border:2px solid var(--gold);border-radius:0 0 12px 0;display:flex;flex-direction:column;animation:pop .2s}
+#nav button{background:none;border:0;color:var(--t);padding:14px 22px;font-size:1.05rem;text-align:left}
+main{position:relative;z-index:1;padding:14px;max-width:700px;margin:auto}
+.card{background:rgba(0,0,0,.3);border:1px solid var(--gold);border-radius:14px;padding:16px;margin-bottom:12px}
+input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid var(--gold);font:inherit;margin:4px 0 10px}
+.b,.g{display:block;width:100%;padding:12px;border-radius:10px;border:0;font:inherit;font-weight:bold;margin-top:8px}
+.b{background:var(--gold);color:#3a2a00}.g{background:var(--s);color:#222}.red{background:var(--r);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.door{aspect-ratio:1;border-radius:10px;border:2px solid var(--gold);background:linear-gradient(135deg,var(--r),#7d1219);color:var(--gold);font:bold 1.6rem Georgia;position:relative;transition:transform .3s;transform-origin:left}
+.door.open:active,.door.open:hover{transform:perspective(300px) rotateY(-35deg)}
+.door.done{background:#777;color:#bbb;border-color:#999}.door i{position:absolute;bottom:2px;right:6px;font-size:.9rem;color:#fff}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:10;display:flex;align-items:center;justify-content:center;padding:14px}
+#modal>div{background:var(--g);border:3px solid var(--gold);border-radius:16px;padding:16px;width:100%;max-width:480px;max-height:90vh;overflow:auto;animation:pop .25s}
+@keyframes pop{from{transform:scale(.7);opacity:0}}
+.sw{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:10px}.sl{flex:0 0 100%;scroll-snap-align:center;text-align:center}
+.rim{font-size:1.2rem;font-style:italic;color:var(--gold)}.hint{text-align:center;opacity:.6;font-size:.8rem}
+.sl img{max-width:60%;max-height:220px;background:#fff;border-radius:10px}.sl a{color:var(--gold)}
+.sc{width:18%;margin:1%;padding:10px 0;border-radius:8px;border:1px solid var(--gold);background:none;color:var(--t);font-size:1rem}.sc.on{background:var(--gold);color:#000}
+table{width:100%;border-collapse:collapse;font-size:.85rem}td,th{padding:5px;border-bottom:1px solid #fff3;text-align:center}
+.top{display:flex;gap:8px;text-align:center}.top div{flex:1;background:#0004;border-radius:10px;padding:8px;border:1px solid var(--gold)}.top img{width:100%;max-height:90px;object-fit:contain;background:#fff;border-radius:6px}
+a{color:var(--gold)}
+@media print{header,#nav,.noprint,#snow{display:none}body{background:#fff;color:#000}}
+</style></head><body>
+<div id="snow"></div>
+<header id="hd" hidden><button id="bg" onclick="$('#nav').hidden=!$('#nav').hidden">☰</button><h1>🎄 Ölkalendern 🍺</h1></header>
+<nav id="nav" hidden></nav><main id="app">Laddar…</main><div id="modal" hidden></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+// Platshållarna ersätts av GitHub Actions vid publicering (se .github/workflows/deploy.yml)
+const FB={apiKey:"__FB_API_KEY__",authDomain:"__FB_AUTH_DOMAIN__",projectId:"__FB_PROJECT_ID__",appId:"__FB_APP_ID__"};
+firebase.initializeApp(FB);const db=firebase.firestore();
+const $=s=>document.querySelector(s),esc=s=>(s??'').toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TYPES=['IPA','Lager','Stout','Porter','Vetaöl','Pale Ale','Julöl','Surt','Brown Ale','Belgisk','Pilsner','Amber Ale'];
+let cfg,users=[],beers={},rates=[],view='cal',me=null,adm=false,L={},sk='score',started=false;
+const TEST=new URLSearchParams(location.search).get('test'); // ?test=15 för att testa datum
+const isOpen=d=>(TEST?new Date(new Date().getFullYear(),11,+TEST):new Date())>=new Date(cfg.year,11,d);
+const shuf=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+function gen(n){const days=shuf([...Array(24)].map((_,i)=>i+1)),ty=shuf([...TYPES,...TYPES]),assign={},types={};
+ days.forEach((d,i)=>{assign[d]=(i%n)+1});ty.forEach((t,i)=>types[i+1]=t);return{assign,types}}
+db.doc('config/main').onSnapshot(async s=>{if(!s.exists){await db.doc('config/main').set({n:12,year:new Date().getFullYear(),pw:'__ADMIN_PW__',...gen(12)});return}cfg=s.data();rdy('c')});
+db.collection('users').onSnapshot(s=>{users=s.docs.map(d=>d.data());rdy('u')});
+db.collection('beers').onSnapshot(s=>{beers={};s.docs.forEach(d=>beers[d.id]=d.data());rdy('b')});
+db.collection('ratings').onSnapshot(s=>{rates=s.docs.map(d=>d.data());rdy('r')});
+function rdy(k){L[k]=1;if(!(L.c&&L.u&&L.b&&L.r))return;
+ if(!started){started=true;const n=localStorage.ol_name;if(n){const u=users.find(x=>x.name.toLowerCase()==n.toLowerCase());me=u||(users.length>=cfg.n?{id:0,name:n,viewer:true}:null)}}
+ else if(me&&!me.viewer&&!users.find(u=>u.id==me.id))me=null;render()}
+const myDays=()=>Object.keys(cfg.assign).filter(d=>cfg.assign[d]==me.id).map(Number).sort((a,b)=>a-b);
+const pid=l=>(/-(\d{3,})\/?(\?.*)?$/.exec(l||'')||[])[1];
+const img=b=>pid(b.link)?`<img src="https://product-cdn.systembolaget.se/productimages/${pid(b.link)}/${pid(b.link)}_400.png" onerror="this.outerHTML='<div style=font-size:60px>🍺</div>'">`:'<div style="font-size:60px">🍺</div>';
+const safe=l=>/^https:\/\//.test(l||'')?l:'#';
+function modal(h){const m=$('#modal');m.innerHTML='<div>'+h+'</div>';m.hidden=false}
+const closeM=()=>$('#modal').hidden=true;
+function render(){const a=$('#app');
+ if(!me){$('#hd').hidden=true;a.innerHTML=`<div class=card><h2>🎅 Välkommen!</h2><p>Skriv ditt namn (kom ihåg det!)</p><input id=nm value="${esc(localStorage.ol_name)}"><button class=b onclick=login()>Gå vidare</button></div>`;return}
+ $('#hd').hidden=false;
+ if(me.viewer)view='stats';else if(view=='cal'&&myDays().some(d=>!beers[d]?.link))view='set';
+ $('#nav').innerHTML=me.viewer?'<button onclick="go(\'stats\')">📊 Statistik</button>':'<button onclick="go(\'cal\')">🎁 Kalender</button><button onclick="go(\'stats\')">📊 Statistik</button><button onclick="go(\'set\')">⚙️ Inställningar</button>';
+ ({cal,stats,set})[view]()}
+const go=v=>{view=v;$('#nav').hidden=true;render()};
+async function login(){const name=$('#nm').value.trim();if(!name)return;localStorage.ol_name=name;
+ let u=users.find(x=>x.name.toLowerCase()==name.toLowerCase());
+ if(!u&&users.length<cfg.n){let id=1;while(users.some(x=>x.id==id))id++;u={id,name};await db.doc('users/'+id).set(u)}
+ me=u||{id:0,name,viewer:true};render()}
+function cal(){let h=(me.viewer?'':'<p style="text-align:center">Hej '+esc(me.name)+'! Tryck på en lucka 🎄</p>')+'<div class=grid>';
+ for(let d=1;d<=24;d++){const done=rates.some(r=>r.day==d&&r.uid==me.id);h+=`<button class="door ${isOpen(d)?'open':''} ${done?'done':''}" onclick="openDay(${d})">${d}${done?'<i>✔</i>':''}</button>`}
+ $('#app').innerHTML=h+'</div>'}
+function openDay(d){if(!isOpen(d))return modal(`<h2>Oj, försöker du fuska! 🎅</h2><p>Lucka ${d} får inte öppnas än.</p><button class=g onclick=closeM()>Tillbaka</button><button class=red onclick="rateModal(${d})">Betygsätt ändå</button>`);
+ const b=beers[d]||{},s=[];
+ if(b.rim)s.push(`<div class=sl><h3>🎁 Julrim</h3><p class=rim>${esc(b.rim).replace(/\n/g,'<br>')}</p></div>`);
+ s.push(`<div class=sl><h3>Lucka ${d} · ${esc(cfg.types[d])}</h3>${img(b)}<h4>${esc(b.name||'')}</h4><p>${esc(b.desc||'')}</p>${b.link?`<a href="${safe(b.link)}" target=_blank>Systembolaget ↗</a>`:'<p>Ingen info ännu</p>'}</div>`);
+ modal(`<div class=sw>${s.join('')}</div>${s.length>1?'<p class=hint>← svep →</p>':''}${me.viewer?'':`<button class=b onclick="rateModal(${d})">⭐ Betygsätt</button>`}<button class=g onclick=closeM()>Stäng</button>`)}
+const sel=(id,v)=>`<select id=${id}><option value=0>–</option>${[1,2,3,4,5].map(i=>`<option ${v==i?'selected':''}>${i}</option>`).join('')}</select>`;
+function rateModal(d){if(me.viewer)return;const r=rates.find(x=>x.day==d&&x.uid==me.id)||{};
+ modal(`<h3>Betygsätt lucka ${d}</h3><div>${[1,2,3,4,5,6,7,8,9,10].map(i=>`<button class="sc ${r.score==i?'on':''}" data-v=${i} onclick="document.querySelectorAll('.sc').forEach(x=>x.classList.remove('on'));this.classList.add('on')">${i}</button>`).join('')}</div>
+ Beska (1-5, valfri)${sel('bi',r.bitter)}Fyllighet${sel('fu',r.full)}Sötma${sel('sw',r.sweet)}
+ <textarea id=ds rows=3 placeholder="Beskrivning (valfri)">${esc(r.desc)}</textarea><button class=b onclick="saveRate(${d})">Spara</button><button class=g onclick=closeM()>Avbryt</button>`)}
+async function saveRate(d){const s=+document.querySelector('.sc.on')?.dataset.v;if(!s)return alert('Välj ett betyg 1–10');
+ await db.doc(`ratings/${d}_${me.id}`).set({day:d,uid:me.id,score:s,desc:$('#ds').value.trim(),bitter:+$('#bi').value,full:+$('#fu').value,sweet:+$('#sw').value});closeM()}
+function calc(B,R,T,open){const o=[];for(let d=1;d<=24;d++){if(!open(d))continue;const rs=R.filter(r=>r.day==d);if(!rs.length)continue;
+ const av=k=>{const v=rs.map(r=>r[k]).filter(x=>x>0);return v.length?v.reduce((a,b)=>a+b)/v.length:0};
+ o.push({d,b:B[d]||{},t:T[d],n:rs.length,s:av('score'),bi:av('bitter'),fu:av('full'),sw:av('sweet')})}return o}
+const f=x=>x?x.toFixed(1):'–';
+function table(rows,k){const key={score:'s',bitter:'bi',full:'fu',sweet:'sw'}[k];
+ const r=[...rows].sort((a,b)=>key?b[key]-a[key]:a.t.localeCompare(b.t)||b.s-a.s);
+ return `<table><tr><th>#</th><th>Sort</th><th>Öl</th><th>Betyg</th><th>Beska</th><th>Fyll</th><th>Söt</th></tr>${r.map(x=>`<tr><td>${x.d}</td><td>${esc(x.t)}</td><td>${esc(x.b.name||'')}</td><td>${f(x.s)}</td><td>${f(x.bi)}</td><td>${f(x.fu)}</td><td>${f(x.sw)}</td></tr>`).join('')}</table>`}
+function top3(rows){return '<div class=top>'+[...rows].sort((a,b)=>b.s-a.s).slice(0,3).map((x,i)=>`<div>${['🥇','🥈','🥉'][i]}${img(x.b)}<b>${f(x.s)}</b><br><small>Lucka ${x.d}<br>${esc(x.b.name||x.t)}</small></div>`).join('')+'</div>'}
+function stats(){const rows=calc(beers,rates,cfg.types,isOpen);
+ $('#app').innerHTML=`<div id=sb class=card><h2>📊 Statistik ${cfg.year}</h2><p>Deltagare: <b>${users.length}</b></p>${rows.length?top3(rows)+`<select id=sk class=noprint onchange="sk=this.value;stats()">${[['score','Betyg'],['bitter','Beska'],['full','Fyllighet'],['sweet','Sötma'],['sort','Ölsort']].map(o=>`<option value=${o[0]} ${sk==o[0]?'selected':''}>Sortera: ${o[1]}</option>`).join('')}</select>`+table(rows,sk):'<p>Inga betyg ännu.</p>'}</div>
+ <button class="b noprint" onclick="html2canvas($('#sb')).then(c=>{const a=document.createElement('a');a.href=c.toDataURL();a.download='statistik.png';a.click()})">🖼 Spara som bild</button><button class="g noprint" onclick="print()">📄 Spara som PDF</button>`}
+function set(){const need=myDays().some(d=>!beers[d]?.link);
+ $('#app').innerHTML=`<div class=card><h2>⚙️ Dina öler</h2>${need?'<p>Fyll i länk till Systembolaget för dina öler för att komma till kalendern.</p>':''}${myDays().map(d=>`<button class=${beers[d]?.link?'g':'b'} onclick="editBeer(${d})">Lucka ${d} · ${esc(cfg.types[d])} ${beers[d]?.link?'✔':'⚠️'}</button>`).join('')}</div>
+ <button class=g onclick="localStorage.removeItem('ol_name');me=null;started=true;render()">Byt användare</button><button class=red onclick="advLogin()">🔒 Avancerade inställningar</button><div id=adv></div>`;if(adm)advPanel()}
+function editBeer(d){const b=beers[d]||{};modal(`<h3>Lucka ${d} · ${esc(cfg.types[d])}</h3>Länk Systembolaget<input id=lk value="${esc(b.link)}" placeholder="https://www.systembolaget.se/produkt/ol/...">Julrim (valfritt)<textarea id=rm rows=3>${esc(b.rim)}</textarea>Namn (valfritt)<input id=nmb value="${esc(b.name)}">Beskrivning (valfritt)<textarea id=dsc rows=2>${esc(b.desc)}</textarea><button class=b onclick="saveBeer(${d})">Spara</button><button class=g onclick=closeM()>Avbryt</button>`)}
+async function saveBeer(d){const link=$('#lk').value.trim();if(!/^https:\/\//.test(link))return alert('Klistra in en https-länk');
+ await db.doc('beers/'+d).set({link,rim:$('#rm').value.trim(),name:$('#nmb').value.trim(),desc:$('#dsc').value.trim()});closeM()}
+function advLogin(){if(adm)return advPanel();if(prompt('Lösenord')===cfg.pw){adm=true;advPanel()}else alert('Fel lösenord')}
+function advPanel(){$('#adv').innerHTML=`<div class=card><h3>Medlemmar</h3>${users.sort((a,b)=>a.id-b.id).map(u=>`<p>${u.id}. ${esc(u.name)} <button onclick="rmUser(${u.id})">Ta bort</button></p>`).join('')}
+ <h3>Antal personer</h3><input id=nn type=number min=1 max=24 value=${cfg.n}><button class=b onclick="regen(+$('#nn').value)">Spara & slumpa om</button>
+ <button class=g onclick="regen(cfg.n)">🎲 Slumpa nya dagar/sorter</button>
+ <h3>Tilldelning</h3><table>${Object.keys(cfg.assign).sort((a,b)=>a-b).map(d=>`<tr><td>${d}</td><td>${esc(cfg.types[d])}</td><td>${esc(users.find(u=>u.id==cfg.assign[d])?.name||'(ledig plats '+cfg.assign[d]+')')}</td></tr>`).join('')}</table>
+ <button class=g onclick=archList()>📁 Tidigare år</button><button class=red onclick=newYear()>🧹 Rensa till nästa år</button></div>`}
+async function delAll(c){const s=await db.collection(c).get(),b=db.batch();s.docs.forEach(d=>b.delete(d.ref));await b.commit()}
+async function rmUser(id){if(!confirm('Ta bort?'))return;await db.doc('users/'+id).delete();for(const r of rates.filter(r=>r.uid==id))await db.doc(`ratings/${r.day}_${id}`).delete()}
+async function regen(n){if(!confirm('Detta rensar alla inmatade öler. Fortsätta?'))return;await delAll('beers');await db.doc('config/main').update({n,...gen(n)})}
+async function newYear(){if(!confirm('Arkivera och rensa?'))return;await db.doc('archive/'+cfg.year).set({beers,ratings:rates,types:cfg.types});await delAll('beers');await delAll('ratings');await db.doc('config/main').update({year:cfg.year+1,...gen(cfg.n)})}
+async function archList(){const s=await db.collection('archive').get();modal(s.docs.map(d=>`<button class=b onclick="archShow('${d.id}')">${d.id}</button>`).join('')||'<p>Inget arkiv än</p>');window._arch={};s.docs.forEach(d=>_arch[d.id]=d.data())}
+function archShow(y){const a=_arch[y],rows=calc(a.beers,a.ratings,a.types,()=>true);modal(`<h3>${y}</h3>${top3(rows)}${table(rows,'score')}<button class=g onclick=closeM()>Stäng</button>`)}
+for(let i=0;i<30;i++){const s=document.createElement('span');s.textContent='❄';s.style.cssText=`left:${Math.random()*100}%;font-size:${8+Math.random()*14}px;animation-duration:${6+Math.random()*10}s;animation-delay:${-Math.random()*10}s`;$('#snow').appendChild(s)}
+$('#modal').onclick=e=>{if(e.target.id=='modal')closeM()};
+</script></body></html>
