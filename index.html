@@ -30,6 +30,8 @@ input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid
 .sc{width:18%;margin:1%;padding:10px 0;border-radius:8px;border:1px solid var(--gold);background:none;color:var(--t);font-size:1rem}.sc.on{background:var(--gold);color:#000}
 table{width:100%;border-collapse:collapse;font-size:.85rem}td,th{padding:5px;border-bottom:1px solid #fff3;text-align:center}
 .top{display:flex;gap:8px;text-align:center}.top div{flex:1;background:#0004;border-radius:10px;padding:8px;border:1px solid var(--gold)}.top img{width:100%;max-height:90px;object-fit:contain;background:#fff;border-radius:6px}
+.b:disabled{opacity:.4}input[type=checkbox]{width:auto;margin:0 10px 0 0}.ck{display:flex;align-items:center;margin:12px 0}
+.tr{display:flex;align-items:center;gap:8px}.tr span{flex:1}.tr input[type=number]{width:70px}
 .warn{background:#8c1620;border:2px solid var(--gold);animation:pulse 1.8s infinite}@keyframes pulse{50%{box-shadow:0 0 14px var(--gold)}}
 a{color:var(--gold)}
 @media print{header,#nav,.noprint,#snow{display:none}body{background:#fff;color:#000}}
@@ -49,10 +51,14 @@ const $=s=>document.querySelector(s),esc=s=>(s??'').toString().replace(/[&<>"]/g
 const TYPES=['IPA','Lager','Stout','Porter','Vetaöl','Pale Ale','Julöl','Surt','Brown Ale','Belgisk','Pilsner','Amber Ale'];
 let cfg,main,yr,curY,unsubs=[],users=[],beers={},rates=[],view='cal',me=null,adm=false,L={},sk='score',started=false;
 const TEST=new URLSearchParams(location.search).get('test'); // ?test=15 för att testa datum
-const isOpen=d=>(TEST?new Date(new Date().getFullYear(),11,+TEST):new Date())>=new Date(cfg.year,11,d);
+const isOpen=d=>cfg.ignoreDate||(TEST?new Date(new Date().getFullYear(),11,+TEST):new Date())>=new Date(cfg.year,11,d);
 const shuf=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
-function gen(n){const days=shuf([...Array(24)].map((_,i)=>i+1)),ty=shuf([...TYPES,...TYPES]),assign={},types={};
- days.forEach((d,i)=>{assign[d]=(i%n)+1});ty.forEach((t,i)=>types[i+1]=t);return{assign,types}}
+const dflt=()=>Object.fromEntries(TYPES.map(t=>[t,2]));
+function gen(n,c){c=c||dflt();const days=shuf([...Array(24)].map((_,i)=>i+1)),ty=shuf(Object.entries(c).flatMap(([t,k])=>Array(k).fill(t))),assign={},types={};
+ days.forEach((d,i)=>{assign[d]=(i%n)+1});ty.forEach((t,i)=>types[i+1]=t);return{assign,types,counts:c}}
+function seedShuf(y){let s=y*2654435761>>>0;const r=()=>{s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296};
+ const a=[...Array(24)].map((_,i)=>i+1);for(let i=23;i>0;i--){const j=Math.floor(r()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+let dc=null;
 const need=()=>myDays().some(d=>!beers[d]?.link);
 const yref=y=>db.doc('years/'+(y||cfg.year)),ycol=(c,y)=>db.collection(`years/${y||cfg.year}/${c}`);
 async function ensureYear(m){const ref=yref(m.year),x=await ref.get();if(x.exists)return;
@@ -91,9 +97,9 @@ async function login(){const name=$('#nm').value.trim();if(!name)return;localSto
  if(!u&&users.length<cfg.n){let id=1;while(users.some(x=>x.id==id))id++;u={id,name};await db.doc('users/'+id).set(u)}
  me=u||{id:0,name,viewer:true};if(!me.viewer&&need())view='set';render()}
 function cal(){let h=(!me.viewer&&need()?`<div class="card warn"><b>⚠️ Du har ${myDays().filter(d=>!beers[d]?.link).length} öl att fylla i!</b><p>Lägg in länken till din tilldelade öl under Inställningar så att alla kan se den när luckan öppnas.</p><button class=b onclick="go('set')">⚙️ Gå till Inställningar</button></div>`:'')+(me.viewer?'':'<p style="text-align:center">Hej '+esc(me.name)+'! Tryck på en lucka 🎄</p>')+'<div class=grid>';
- for(let d=1;d<=24;d++){const done=rates.some(r=>r.day==d&&r.uid==me.id);h+=`<button class="door ${isOpen(d)?'open':''} ${done?'done':''}" onclick="openDay(${d})">${d}${done?'<i>✔</i>':''}</button>`}
+ for(const d of cfg.ordered?[...Array(24)].map((_,i)=>i+1):seedShuf(cfg.year)){const done=rates.some(r=>r.day==d&&r.uid==me.id);h+=`<button class="door ${isOpen(d)?'open':''} ${done?'done':''}" onclick="openDay(${d})">${d}${done?'<i>✔</i>':''}</button>`}
  $('#app').innerHTML=h+'</div>'}
-function openDay(d){if(!isOpen(d))return modal(`<h2>Oj, försöker du fuska! 🎅</h2><p>Lucka ${d} får inte öppnas än.</p><button class=g onclick=closeM()>Tillbaka</button><button class=red onclick="rateModal(${d})">Betygsätt ändå</button>`);
+function openDay(d){if(!isOpen(d))return modal(`<h2>Oj, försöker du fuska! 🎅</h2><p>Lucka ${d} får inte öppnas än.</p><button class=g onclick=closeM()>Tillbaka</button><button class=g onclick="rateModal(${d})">Betygsätt ändå</button>`);
  const b=beers[d]||{},s=[];
  if(b.rim)s.push(`<div class=sl><h3>🎁 Julrim</h3><p class=rim>${esc(b.rim).replace(/\n/g,'<br>')}</p></div>`);
  s.push(`<div class=sl><h3>Lucka ${d} · ${esc(cfg.types[d])}</h3>${img(b)}<h4>${esc(b.name||'')}</h4><p>${esc(b.desc||'')}</p>${b.link?`<a href="${safe(b.link)}" target=_blank>Systembolaget ↗</a>`:'<p>Ingen info ännu</p>'}</div>`);
@@ -119,20 +125,31 @@ function stats(){const rows=calc(beers,rates,cfg.types,isOpen);
 function set(){const md=myDays(),todo=md.filter(d=>!beers[d]?.link);
  $('#app').innerHTML=`<div class="card ${todo.length?'warn':''}"><h2>⚙️ Dina öler</h2>${todo.length?`<p><b>👉 Gör detta först:</b> Du har ${md.length} tilldelade öler (${md.length-todo.length} av ${md.length} ifyllda). Tryck på en lucka nedan och klistra in länken till ölen från Systembolaget.</p>`:'<p>✅ Alla dina öler är ifyllda. Tryck på en lucka för att ändra.</p>'}${md.map(d=>`<button class=${beers[d]?.link?'g':'b'} onclick="editBeer(${d})">Lucka ${d} · ${esc(cfg.types[d])} – ${beers[d]?.link?'✔ Ändra':'⚠️ Fyll i'}</button>`).join('')||'<p>Du har inga tilldelade öler.</p>'}</div>
  <button class=g onclick="go('cal')">🎁 Till kalendern</button>
- <button class=g onclick="localStorage.removeItem('ol_name');me=null;started=true;render()">Byt användare</button><button class=red onclick="advLogin()">🔒 Avancerade inställningar</button><div id=adv></div>`;if(adm)advPanel()}
+ <button class=g onclick="localStorage.removeItem('ol_name');me=null;started=true;render()">Byt användare</button><button class=g onclick="advLogin()">🔒 Avancerade inställningar</button><div id=adv></div>`;if(adm)advPanel()}
 function editBeer(d){const b=beers[d]||{};modal(`<h3>Lucka ${d} · ${esc(cfg.types[d])}</h3>Länk Systembolaget<input id=lk value="${esc(b.link)}" placeholder="https://www.systembolaget.se/produkt/ol/...">Julrim (valfritt)<textarea id=rm rows=3>${esc(b.rim)}</textarea>Namn (valfritt)<input id=nmb value="${esc(b.name)}">Beskrivning (valfritt)<textarea id=dsc rows=2>${esc(b.desc)}</textarea><button class=b onclick="saveBeer(${d})">Spara</button><button class=g onclick=closeM()>Avbryt</button>`)}
 async function saveBeer(d){const link=$('#lk').value.trim();if(!/^https:\/\//.test(link))return alert('Klistra in en https-länk');
  await ycol('beers').doc(''+d).set({link,rim:$('#rm').value.trim(),name:$('#nmb').value.trim(),desc:$('#dsc').value.trim()});closeM()}
 function advLogin(){if(adm)return advPanel();if(prompt('Lösenord')===cfg.pw){adm=true;advPanel()}else alert('Fel lösenord')}
-function advPanel(){$('#adv').innerHTML=`<div class=card><h3>Medlemmar</h3>${users.sort((a,b)=>a.id-b.id).map(u=>`<p>${u.id}. ${esc(u.name)} <button onclick="rmUser(${u.id})">Ta bort</button></p>`).join('')}
- <h3>Antal personer</h3><input id=nn type=number min=1 max=24 value=${cfg.n}><button class=b onclick="regen(+$('#nn').value)">Spara & slumpa om</button>
- <button class=g onclick="regen(cfg.n)">🎲 Slumpa nya dagar/sorter</button>
+function advPanel(){if(!dc)dc={...(cfg.counts||dflt())};$('#adv').innerHTML=`<div class=card><h3>Medlemmar</h3>${users.sort((a,b)=>a.id-b.id).map(u=>`<p>${u.id}. ${esc(u.name)} <button onclick="rmUser(${u.id})">Ta bort</button></p>`).join('')}
+ <h3>Antal personer</h3><input id=nn type=number min=1 max=24 value=${cfg.n}>
+ <h3>Ölsorter (totalt 24)</h3>${Object.keys(dc).map((t,i)=>`<div class=tr><span>${esc(t)}</span><input type=number min=0 max=24 value=${dc[t]} oninput="setC(${i},this.value)"></div>`).join('')}
+ <div class=tr><input id=nt placeholder="Ny ölsort"><button class=g style="width:auto;margin:0" onclick=addT()>Lägg till</button></div>
+ <p id=tt></p><button id=sv class=b onclick=saveGen()>Spara & slumpa om</button>
+ <p class=hint>Ändrar du antal personer eller sorter måste du slumpa om. Det rensar alla ifyllda öler.</p>
+ <button class=g onclick="regen(cfg.n,cfg.counts||dflt())">🎲 Slumpa nya dagar/sorter</button>
+ <label class=ck><input type=checkbox ${cfg.ignoreDate?'checked':''} onchange="yref().update({ignoreDate:this.checked})">Ignorera datumspärren (alla luckor kan öppnas)</label>
+ <label class=ck><input type=checkbox ${cfg.ordered?'checked':''} onchange="yref().update({ordered:this.checked})">Luckor i sifferordning (annars blandade)</label>
  <h3>Tilldelning</h3><table>${Object.keys(cfg.assign).sort((a,b)=>a-b).map(d=>`<tr><td>${d}</td><td>${esc(cfg.types[d])}</td><td>${esc(users.find(u=>u.id==cfg.assign[d])?.name||'(ledig plats '+cfg.assign[d]+')')}</td></tr>`).join('')}</table>
- <button class=g onclick=archList()>📁 Tidigare år</button><button class=red onclick=newYear()>🧹 Rensa till nästa år</button></div>`}
+ <button class=g onclick=archList()>📁 Tidigare år</button><button class=red onclick=newYear()>🧹 Rensa till nästa år</button></div>`;tot()}
 async function delAll(c){const q=await c.get();for(const d of q.docs)await d.ref.delete()}
 async function rmUser(id){if(!confirm('Ta bort?'))return;await db.doc('users/'+id).delete();for(const r of rates.filter(r=>r.uid==id))await ycol('ratings').doc(`${r.day}_${id}`).delete()}
-async function regen(n){if(!confirm('Detta rensar alla inmatade öler för '+cfg.year+'. Fortsätta?'))return;await delAll(ycol('beers'));await yref().set({n,...gen(n)})}
-async function newYear(){const y=cfg.year+1;if(!confirm(`Starta ${y}? ${cfg.year} sparas kvar under Tidigare år.`))return;await yref(y).set({n:cfg.n,...gen(cfg.n)});await db.doc('config/main').update({year:y})}
+const sum=c=>Object.values(c).reduce((a,b)=>a+b,0);
+function tot(){const t=sum(dc),ok=t==24;$('#tt').innerHTML=`Summa: <b>${t}</b> / 24 ${ok?'✔':'– måste bli exakt 24'}`;$('#sv').disabled=!ok}
+const setC=(i,v)=>{dc[Object.keys(dc)[i]]=Math.max(0,Math.floor(+v||0));tot()};
+function addT(){const t=$('#nt').value.trim();if(!t)return;dc[t]=(dc[t]||0)+1;advPanel()}
+function saveGen(){const c={};Object.entries(dc).forEach(([t,k])=>{if(k>0)c[t]=k});const n=+$('#nn').value;if(!(n>=1&&n<=24))return alert('Antal personer: 1–24');regen(n,c)}
+async function regen(n,c){if(sum(c)!=24)return alert('Summan av ölsorterna måste vara 24');if(!confirm('Detta rensar alla inmatade öler för '+cfg.year+'. Fortsätta?'))return;await delAll(ycol('beers'));await yref().update({n,...gen(n,c)});dc=null}
+async function newYear(){const y=cfg.year+1;if(!confirm(`Starta ${y}? ${cfg.year} sparas kvar under Tidigare år.`))return;await yref(y).set({n:cfg.n,...gen(cfg.n,cfg.counts)});dc=null;await db.doc('config/main').update({year:y})}
 async function archList(){const[ys,ar]=await Promise.all([db.collection('years').get(),db.collection('archive').get()]);
  const y=ys.docs.map(d=>d.id).filter(i=>i!=cfg.year).sort().reverse(),old=ar.docs.map(d=>d.id).filter(i=>!y.includes(i)&&i!=cfg.year).sort().reverse();
  modal('<h3>Tidigare år</h3>'+(y.map(i=>`<button class=b onclick="archShow('${i}')">${i}</button>`).concat(old.map(i=>`<button class=b onclick="archShow('${i}',1)">${i}</button>`)).join('')||'<p>Inget arkiv än</p>')+'<button class=g onclick=closeM()>Stäng</button>')}
