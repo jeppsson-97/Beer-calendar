@@ -1,0 +1,85 @@
+name: Deploy Ölkalendern to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Replace Firebase and admin placeholders
+        env:
+          FB_API_KEY: ${{ vars.FB_API_KEY }}
+          FB_AUTH_DOMAIN: ${{ vars.FB_AUTH_DOMAIN }}
+          FB_PROJECT_ID: ${{ vars.FB_PROJECT_ID }}
+          FB_APP_ID: ${{ vars.FB_APP_ID }}
+          ADMIN_PW: ${{ secrets.ADMIN_PW }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path("index.html")
+          html = path.read_text(encoding="utf-8")
+
+          replacements = {
+              "__FB_API_KEY__": os.environ.get("FB_API_KEY", ""),
+              "__FB_AUTH_DOMAIN__": os.environ.get("FB_AUTH_DOMAIN", ""),
+              "__FB_PROJECT_ID__": os.environ.get("FB_PROJECT_ID", ""),
+              "__FB_APP_ID__": os.environ.get("FB_APP_ID", ""),
+              "__ADMIN_PW__": os.environ.get("ADMIN_PW", ""),
+          }
+
+          missing = [
+              key for key, value in replacements.items()
+              if not value
+          ]
+
+          if missing:
+              raise SystemExit(
+                  "Missing GitHub Actions variables/secrets for: "
+                  + ", ".join(missing)
+              )
+
+          for placeholder, value in replacements.items():
+              html = html.replace(placeholder, value)
+
+          if any(placeholder in html for placeholder in replacements):
+              raise SystemExit(
+                  "At least one placeholder was not replaced."
+              )
+
+          path.write_text(html, encoding="utf-8")
+          PY
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
