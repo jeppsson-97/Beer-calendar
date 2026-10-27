@@ -120,7 +120,7 @@ function table(rows,k){const key={score:'s',bitter:'bi',full:'fu',sweet:'sw'}[k]
  return `<table><tr><th>#</th><th>Sort</th><th>Länk</th><th>Betyg</th><th>Beska</th><th>Fyll</th><th>Söt</th></tr>${r.map(x=>`<tr><td>${x.d}</td><td>${esc(x.t)}</td><td>${x.b.link?`<a href="${safe(x.b.link)}" target=_blank>↗</a>`:''}</td><td>${f(x.s)}</td><td>${f(x.bi)}</td><td>${f(x.fu)}</td><td>${f(x.sw)}</td></tr>`).join('')}</table>`}
 function top3(rows){return '<div class=top>'+[...rows].sort((a,b)=>b.s-a.s).slice(0,3).map((x,i)=>`<div>${['🥇','🥈','🥉'][i]}${img(x.b)}<b>${f(x.s)}</b><br><small>Lucka ${x.d}<br>${esc(x.t)}${x.b.link?`<br><a href="${safe(x.b.link)}" target=_blank>Länk ↗</a>`:''}</small></div>`).join('')+'</div>'}
 function stats(){const rows=calc(beers,rates,cfg.types,isOpen);
- $('#app').innerHTML=`<div id=sb class=card><h2>📊 Statistik ${cfg.year}</h2><p>Deltagare: <b>${users.length}</b></p>${rows.length?top3(rows)+`<select id=sk class=noprint onchange="sk=this.value;stats()">${[['score','Betyg'],['bitter','Beska'],['full','Fyllighet'],['sweet','Sötma'],['sort','Ölsort']].map(o=>`<option value=${o[0]} ${sk==o[0]?'selected':''}>Sortera: ${o[1]}</option>`).join('')}</select>`+table(rows,sk):'<p>Inga betyg ännu.</p>'}</div>
+ $('#app').innerHTML=`<div id=sb class=card><h2>📊 Statistik ${cfg.year}${cfg.title?' – '+esc(cfg.title):''}</h2><p>Deltagare: <b>${users.length}</b></p>${rows.length?top3(rows)+`<select id=sk class=noprint onchange="sk=this.value;stats()">${[['score','Betyg'],['bitter','Beska'],['full','Fyllighet'],['sweet','Sötma'],['sort','Ölsort']].map(o=>`<option value=${o[0]} ${sk==o[0]?'selected':''}>Sortera: ${o[1]}</option>`).join('')}</select>`+table(rows,sk):'<p>Inga betyg ännu.</p>'}</div>
  <button class="b noprint" onclick="html2canvas($('#sb')).then(c=>{const a=document.createElement('a');a.href=c.toDataURL();a.download='statistik.png';a.click()})">🖼 Spara som bild</button><button class="g noprint" onclick="print()">📄 Spara som PDF</button>`}
 function set(){const md=myDays(),todo=md.filter(d=>!beers[d]?.link);
  $('#app').innerHTML=`<div class="card ${todo.length?'warn':''}"><h2>⚙️ Dina öler</h2>${todo.length?`<p><b>👉 Gör detta först:</b> Du har ${md.length} tilldelade öler (${md.length-todo.length} av ${md.length} ifyllda). Tryck på en lucka nedan och klistra in länken till ölen från Systembolaget.</p>`:'<p>✅ Alla dina öler är ifyllda. Tryck på en lucka för att ändra.</p>'}${md.map(d=>`<button class=${beers[d]?.link?'g':'b'} onclick="editBeer(${d})">Lucka ${d} · ${esc(cfg.types[d])} – ${beers[d]?.link?'✔ Ändra':'⚠️ Fyll i'}</button>`).join('')||'<p>Du har inga tilldelade öler.</p>'}</div>
@@ -141,7 +141,7 @@ function advPanel(){if(!dc)dc={...(cfg.counts||dflt())};$('#adv').innerHTML=`<di
  <label class=ck><input type=checkbox ${cfg.ordered?'checked':''} onchange="yref().update({ordered:this.checked})">Luckor i sifferordning (annars blandade)</label>
  <h3>Tilldelning</h3><table>${Object.keys(cfg.assign).sort((a,b)=>a-b).map(d=>`<tr><td>${d}</td><td>${esc(cfg.types[d])}</td><td>${esc(users.find(u=>u.id==cfg.assign[d])?.name||'(ledig plats '+cfg.assign[d]+')')}</td></tr>`).join('')}</table>
  <h3>Byt aktivt år</h3><select id=ys></select><button class=g onclick=setYear()>Gå till valt år</button>
- <button class=g onclick=archList()>📁 Tidigare år</button><button class=red onclick=newYear()>🧹 Rensa till nästa år</button><button class=red onclick=delOld()>🗑 Ta bort all gammal data</button></div>`;tot();fillYears()}
+ <button class=g onclick=archList()>📁 Tidigare år</button><button class=red onclick=newYear()>➡️ Nästa år</button><button class=red onclick=delOld()>🗑 Ta bort all gammal data</button></div>`;tot();fillYears()}
 async function delAll(c){const q=await c.get();for(const d of q.docs)await d.ref.delete()}
 async function rmUser(id){if(!confirm('Ta bort?'))return;await db.doc('users/'+id).delete();for(const r of rates.filter(r=>r.uid==id))await ycol('ratings').doc(`${r.day}_${id}`).delete()}
 const sum=c=>Object.values(c).reduce((a,b)=>a+b,0);
@@ -157,14 +157,14 @@ async function delOld(){if(!confirm(`Ta bort ALL data från andra år än ${cfg.
  for(const d of q.docs){if(d.id==cfg.year)continue;await delAll(ycol('beers',d.id));await delAll(ycol('ratings',d.id));await d.ref.delete()}
  for(const c of['archive','beers','ratings'])await delAll(db.collection(c));
  fillYears();alert('Gammal data är borttagen.')}
-async function newYear(){const y=cfg.year+1;if(!confirm(`Starta ${y}? ${cfg.year} sparas kvar under Tidigare år.`))return;await yref(y).set({n:cfg.n,...gen(cfg.n,cfg.counts)});dc=null;await db.doc('config/main').update({year:y})}
+async function newYear(){const y=cfg.year+1;const t=prompt(`Namn på nästa kalender (${y}). Visas i statistiken. ${cfg.year} sparas kvar under Tidigare år.`);if(t===null)return;await yref(y).set({title:t.trim(),n:cfg.n,...gen(cfg.n,cfg.counts)});dc=null;await db.doc('config/main').update({year:y})}
 async function archList(){const[ys,ar]=await Promise.all([db.collection('years').get(),db.collection('archive').get()]);
- const y=ys.docs.map(d=>d.id).filter(i=>i!=cfg.year).sort().reverse(),old=ar.docs.map(d=>d.id).filter(i=>!y.includes(i)&&i!=cfg.year).sort().reverse();
- modal('<h3>Tidigare år</h3>'+(y.map(i=>`<button class=b onclick="archShow('${i}')">${i}</button>`).concat(old.map(i=>`<button class=b onclick="archShow('${i}',1)">${i}</button>`)).join('')||'<p>Inget arkiv än</p>')+'<button class=g onclick=closeM()>Stäng</button>')}
-async function archShow(y,leg){let b={},r=[],t;
+ const T={};ys.docs.forEach(d=>T[d.id]=d.data().title);const y=ys.docs.map(d=>d.id).filter(i=>i!=cfg.year).sort().reverse(),old=ar.docs.map(d=>d.id).filter(i=>!y.includes(i)&&i!=cfg.year).sort().reverse();
+ modal('<h3>Tidigare år</h3>'+(y.map(i=>`<button class=b onclick="archShow('${i}')">${i}${T[i]?' – '+esc(T[i]):''}</button>`).concat(old.map(i=>`<button class=b onclick="archShow('${i}',1)">${i}</button>`)).join('')||'<p>Inget arkiv än</p>')+'<button class=g onclick=closeM()>Stäng</button>')}
+async function archShow(y,leg){let b={},r=[],t,ti;
  if(leg){const a=(await db.doc('archive/'+y).get()).data();b=a.beers;r=a.ratings;t=a.types}
- else{const[x,bs,rs]=await Promise.all([db.doc('years/'+y).get(),ycol('beers',y).get(),ycol('ratings',y).get()]);t=x.data().types;bs.docs.forEach(d=>b[d.id]=d.data());r=rs.docs.map(d=>d.data())}
- const rows=calc(b,r,t,()=>true);modal(`<h3>${y}</h3>${rows.length?top3(rows)+table(rows,'score'):'<p>Inga betyg det året.</p>'}<button class=g onclick=closeM()>Stäng</button>`)}
+ else{const[x,bs,rs]=await Promise.all([db.doc('years/'+y).get(),ycol('beers',y).get(),ycol('ratings',y).get()]);t=x.data().types;ti=x.data().title;bs.docs.forEach(d=>b[d.id]=d.data());r=rs.docs.map(d=>d.data())}
+ const rows=calc(b,r,t,()=>true);modal(`<h3>${y}${ti?' – '+esc(ti):''}</h3>${rows.length?top3(rows)+table(rows,'score'):'<p>Inga betyg det året.</p>'}<button class=g onclick=closeM()>Stäng</button>`)}
 for(let i=0;i<30;i++){const s=document.createElement('span');s.textContent='❄';s.style.cssText=`left:${Math.random()*100}%;font-size:${8+Math.random()*14}px;animation-duration:${6+Math.random()*10}s;animation-delay:${-Math.random()*10}s`;$('#snow').appendChild(s)}
 $('#modal').onclick=e=>{if(e.target.id=='modal')closeM()};
 </script></body></html>
